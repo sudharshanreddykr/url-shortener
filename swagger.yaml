@@ -1,0 +1,318 @@
+openapi: 3.0.3
+info:
+  title: Paytm URL Shortener & Link Analytics API
+  version: 1.0.0
+  description: API for shortening URLs, redirecting short codes, and reading click analytics.
+servers:
+  - url: http://localhost:3000
+tags:
+  - name: Health
+  - name: Shortener
+  - name: Analytics
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                ok:
+                  value:
+                    status: OK
+  /shorten:
+    post:
+      tags: [Shortener]
+      summary: Create a short URL
+      description: Creates a short code for a URL. The service reuses the existing mapping when the same original URL is shortened again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShortenRequest"
+            examples:
+              withAlias:
+                value:
+                  url: https://example.com/some/very/long/path
+                  alias: ex
+                  expiresInDays: 14
+              withoutAlias:
+                value:
+                  url: https://example.com/some/very/long/path
+      responses:
+        "201":
+          description: Short URL created or reused
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: string
+            X-RateLimit-Remaining:
+              schema:
+                type: string
+            X-RateLimit-Reset:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShortenResponse"
+              examples:
+                created:
+                  value:
+                    status: success
+                    data:
+                      originalUrl: https://example.com/some/very/long/path
+                      shortCode: ex
+                      shortUrl: http://localhost:3000/ex
+        "400":
+          description: Invalid URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidUrl:
+                  value:
+                    status: error
+                    message: Invalid URL provided
+        "409":
+          description: Alias already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                conflict:
+                  value:
+                    status: error
+                    message: Custom alias already in use
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                limited:
+                  value:
+                    status: error
+                    message: Too many short URL creation requests. Please try again later.
+  /api/shorten:
+    post:
+      tags: [Shortener]
+      summary: Create a short URL through the /api alias
+      description: Same behavior as `/shorten`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShortenRequest"
+      responses:
+        "201":
+          description: Short URL created or reused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShortenResponse"
+        "400":
+          description: Invalid URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Alias already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /{code}:
+    get:
+      tags: [Shortener]
+      summary: Redirect to the original URL
+      parameters:
+        - $ref: "#/components/parameters/ShortCode"
+      responses:
+        "301":
+          description: Redirects to the original URL
+        "404":
+          description: Short code not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missing:
+                  value:
+                    status: error
+                    message: Short code not found
+  /analytics/{code}:
+    get:
+      tags: [Analytics]
+      summary: Get click analytics
+      parameters:
+        - $ref: "#/components/parameters/ShortCode"
+      responses:
+        "200":
+          description: Analytics for the short code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResponse"
+        "404":
+          description: Short code not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/analytics/{code}:
+    get:
+      tags: [Analytics]
+      summary: Get click analytics through the /api alias
+      parameters:
+        - $ref: "#/components/parameters/ShortCode"
+      responses:
+        "200":
+          description: Analytics for the short code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsResponse"
+        "404":
+          description: Short code not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  parameters:
+    ShortCode:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Short code created by the shorten endpoint.
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: OK
+    ShortenRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          example: https://example.com/some/very/long/path
+        alias:
+          type: string
+          description: Optional custom alias for the short code.
+          example: ex
+        expiresInDays:
+          type: integer
+          minimum: 1
+          description: Optional TTL in days before the link expires.
+          example: 14
+    ShortenResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          type: object
+          required: [originalUrl, shortCode, shortUrl, ttlDays, expiresAt]
+          properties:
+            originalUrl:
+              type: string
+            shortCode:
+              type: string
+            shortUrl:
+              type: string
+            ttlDays:
+              type: integer
+            expiresAt:
+              type: string
+              format: date-time
+    AnalyticsResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          type: string
+          example: success
+        data:
+          type: object
+          required:
+            [
+              shortCode,
+              originalUrl,
+              expiresAt,
+              ttlDays,
+              totalClicks,
+              recentClicks,
+            ]
+          properties:
+            shortCode:
+              type: string
+            originalUrl:
+              type: string
+            expiresAt:
+              type: string
+              format: date-time
+            ttlDays:
+              type: integer
+            totalClicks:
+              type: integer
+            recentClicks:
+              type: array
+              items:
+                $ref: "#/components/schemas/ClickRecord"
+    ClickRecord:
+      type: object
+      required: [id, urlId, timestamp]
+      properties:
+        id:
+          type: string
+        urlId:
+          type: string
+        userAgent:
+          type: string
+          nullable: true
+        ipAddress:
+          type: string
+          nullable: true
+        referrer:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
